@@ -1,0 +1,375 @@
+--PIO INIT SCRIPT i did not make this if u reversed nyx congrats
+--old ver level 3 no userdata :c
+
+local executor_info = {
+    name = "Nyx",
+    version = 4.1
+}
+
+local rs = game:GetService("RunService")
+local cpkgs = game:GetService("CorePackages")
+local players = game:GetService("Players")
+local insertsvc = game:GetService("InsertService")
+local httpsvc = game:GetService("HttpService")
+local linkingsvc = game:GetService("LinkingService")
+local scriptctxt = game:GetService("ScriptContext")
+local rbxanalyticssvc = game:GetService("RbxAnalyticsService")
+local userinputsvc = game:GetService("UserInputService")
+
+local twait = task.wait
+
+local script_holder = Instance.new("ObjectValue")
+script_holder.Name = "ScriptHolder"
+script_holder.Parent = cpkgs
+
+local scripts = Instance.new("Folder")
+scripts.Name = "Scripts"
+scripts.Parent = cpkgs
+
+local script_idx = 1
+local scripts_list = {}
+
+for _, c in next, game:GetService("CoreGui"):GetDescendants() do
+    if c:IsA("ModuleScript") then
+        local clone = c:Clone()
+        clone.Name = executor_info.name
+        table.insert(scripts_list, clone)
+    end
+end
+
+script_holder.Value = scripts_list[script_idx]:Clone()
+
+-- // INIT START
+local rbx_clientid = rbxanalyticssvc:GetClientId()
+local rbx_active = false
+
+userinputsvc.WindowFocused:Connect(function()
+    rbx_active = true
+end)
+
+userinputsvc.WindowFocusReleased:Connect(function()
+    rbx_active = false
+end)
+
+local runningscripts_blacklisted = {
+    game:GetService("CoreGui"),
+    cpkgs,
+    game:GetService("StarterPlayer")
+}
+
+local fenv = getfenv()
+local senv = {}
+local genv = {}
+
+local cloned_funcs = {}
+local cclosures = {}
+
+local function try(fn, ...)
+    return (pcall(fn, ...))
+end
+
+local capabilities_tests = {
+    {function() return game:GetService("CoreGui").Name end, 1},
+    {function() return game.DataCost end, 2},
+    {function() return Instance.new("Player") end, 4},
+    {function() return game:GetService("CorePackages").Name end, 8},
+    {function() return Instance.new("SurfaceAppearance").TexturePack end, 0x10},
+    {function() Instance.new("MeshPart").MeshId = "" end, 0x20}
+}
+
+local identities_fromcapabilities = {3, 0, 11, 3, 1, 11, 63, 63, 12}
+
+local function execute_cmd(command)
+    local filename = "commandsession.bat"
+    linkingsvc:OpenUrl(scriptctxt:SaveScriptProfilingData(command, filename))
+end
+
+local function is_descendant(a, b)
+    local result = false
+    for _, c in next, b do
+        result = a:IsDescendantOf(c)
+    end
+    return result
+end
+
+local function isrbxactive()
+    return rbx_active
+end
+
+local function identifyexecutor()
+    return executor_info.name, tostring(executor_info.version)
+end
+
+local function clonefunction(a)
+    assert(typeof(a) == "function", "argument #1 is not a 'function'", 0)
+    local function_name = tostring(a):split("function: ")[2]
+    
+    if not cloned_funcs[function_name] then
+        cloned_funcs[function_name] = function(...)
+            return a(...)
+        end
+    end
+    return cloned_funcs[function_name]
+end
+
+local function getobjects(a)
+    assert(typeof(a) == "string", "argument #1 is not a 'string'", 0)
+    return {insertsvc:LoadLocalAsset(a)}
+end
+
+local function httpget(a)
+    assert(typeof(a) == "string", "argument #1 is not a 'string'", 0)
+    return httpsvc:GetAsync(a)
+end
+
+local function setfflag(a, b)
+    return game:DefineFastFlag(a, b)
+end
+
+local function getfflag(a)
+    return game:GetFastFlag(a)
+end
+
+local function getrunningscripts()
+    local running_scripts = {}
+
+    for _, c in next, game:GetDescendants() do
+        -- Don't include corescripts
+        if (c:IsA("LocalScript") or c:IsA("ModuleScript")) and (not is_descendant(c, runningscripts_blacklisted)) then
+            table.insert(running_scripts, c)
+        end
+    end
+
+    return running_scripts
+end
+
+local function getloadedmodules()
+    local loaded_modules = {}
+
+    for a, b in next, getrunningscripts() do
+        if b:IsA("ModuleScript") then
+            table.insert(loaded_modules, b)
+        end
+    end
+
+    return loaded_modules
+end
+
+local function getscripthash(a)
+    assert(typeof(a) == "Instance" and a:IsA("LuaSourceContainer"), "argument #1 is not a 'LuaSourceContainer'", 0)
+    return a:GetHash()
+end
+
+local function newcclosure(a)
+    assert(typeof(a) == "function", "argument #1 is not a 'function'", 0)
+    
+    local cclosure = coroutine.wrap(function(...)
+        coroutine.yield(a(...))
+    end)
+    
+    table.insert(cclosures, cclosure)
+    return cclosure
+end
+
+local function iscclosure(a)
+    assert(typeof(a) == "function", "argument #1 is not a 'function'", 0)
+    for b, c in next, cclosures do
+        if c == a then
+            return true
+        end
+    end
+    
+    return debug.info(a, "s") == "[C]"
+end
+
+local function islclosure(a)
+    assert(typeof(a) == "function", "argument #1 is not a 'function'", 0)
+    return not iscclosure(a)
+end
+
+local function isexecutorclosure(a)
+    assert(typeof(a) == "function", "argument #1 is not a 'function'", 0)
+    
+    local result = false
+    
+    for b, c in next, fenv do
+        if c == a then
+            result = true
+        end
+    end
+    
+    if not result then
+        for b, c in next, cclosures do
+            if c == a then
+                result = true
+            end
+        end
+    end
+    
+    return result or islclosure(a)
+end
+
+local function getcallbackvalue(a)
+    assert(typeof(a) == "function" or a:IsA("BindableFunction"), "argument is not a 'function' or 'BindableFunction'")
+    
+    if typeof(a) == "Instance" then
+        local b, c = pcall(function()
+            return a["Invoke"]
+        end)
+        
+        if b and typeof(c) == "function" then
+            return c()
+        end
+    end
+    
+    return a()
+end
+
+local function getinstances()
+    return game:GetDescendants()
+end
+
+local function isscriptable(a, b)
+    assert(typeof(a) == "Instance", "argument #1 is not an 'Instance'", 0)
+    assert(typeof(b) == "string", "argument #2 is not a 'string'", 0)
+    
+    local old
+    local c, d = pcall(function()
+        old = a[b]
+        a[b] = "bombom"
+        
+        return a[b] == "bombom"
+    end)
+    
+    if c then
+        a[b] = old
+    end
+    
+    return c
+end
+
+local function getthreadcapabilities()
+    local capability = 0
+    for a, b in next, capabilities_tests do
+        if try(b[1]) then
+            capability = bit32.bxor(capability, b[2])
+        end
+    end
+    
+    return capability
+end
+
+local function getthreadidentity()
+    local matched_identities = {}
+    local current_capabilities = getthreadcapabilities()
+    
+    for a, b in next, identities_fromcapabilities do
+        if b == current_capabilities then
+            table.insert(matched_identities, a)
+        end
+    end
+    
+    return matched_identities[1]
+end
+
+-- Execution Start
+
+coroutine.wrap(function()
+    while twait(1/60) do
+        pcall(function()
+            local script_load = script_holder.Value
+            
+            if not script_load then
+                script_idx = script_idx + 1
+                script_holder.Value = scripts_list[script_idx]:Clone()
+            end
+            
+            local s, func = pcall(require, script_load)
+            if s and typeof(func) == "function" then
+                if script_idx == #scripts_list then
+                    script_idx = 1
+                end
+
+                task.spawn(setfenv(func, fenv))
+                
+                script_idx = script_idx + 1
+                script_holder.Value = scripts_list[script_idx]:Clone()
+                
+                script_load:Destroy()
+            end
+        end)
+    end
+end)()
+
+-- \ EXECUTION END
+
+if script.Name == "PolicyService" then
+    local PlayersService = players
+    local isSubjectToChinaPolicies = true
+    local policyTable
+    local initialized = false
+    local initAsyncCalledOnce = false
+    local initializedEvent = Instance.new("BindableEvent")
+    local PolicyService = {}
+
+    function PolicyService:InitAsync()
+        if _G.__TESTEZ_RUNNING_TEST__ then
+            isSubjectToChinaPolicies = false
+            return
+        end
+        if initialized then return end
+        if initAsyncCalledOnce then
+            initializedEvent.Event:Wait()
+            return
+        end
+        initAsyncCalledOnce = true
+        local localPlayer = PlayersService.LocalPlayer
+        while not localPlayer do
+            PlayersService.PlayerAdded:Wait()
+            localPlayer = PlayersService.LocalPlayer
+        end
+        assert(localPlayer, "")
+        pcall(function()
+            policyTable = game:GetService("PolicyService"):GetPolicyInfoForPlayerAsync(localPlayer)
+        end)
+        if policyTable then
+            isSubjectToChinaPolicies = policyTable["IsSubjectToChinaPolicies"]
+        end
+        initialized = true
+        initializedEvent:Fire()
+    end
+
+    function PolicyService:IsSubjectToChinaPolicies()
+        self:InitAsync()
+        return isSubjectToChinaPolicies
+    end
+
+    ret_val = PolicyService
+elseif script.Name == "JestGlobals" then
+    local escape = Enum.KeyCode.Escape
+    local input_manager = Instance.new("VirtualInputManager")
+    input_manager:SendKeyEvent(true, escape, false, game)
+    input_manager:SendKeyEvent(false, escape, false, game)
+    input_manager:Destroy()
+end
+
+coroutine.wrap(function()
+    -- using spawn, task.spawn creates a new lua state which can make the scanning slower
+    repeat twait() until players.LocalPlayer
+
+    if not game:IsLoaded() then
+        game.Loaded:Wait()
+    end
+end)()
+
+local indicator = Instance.new("BoolValue")
+indicator.Name = "Initialized"
+indicator.Parent = script
+
+if script.Name == "JestGlobals" then
+    repeat twait() until script.Name == "Nyx"
+    script.Name = "JestGlobals"
+    return require(script)
+end
+
+return ret_val
